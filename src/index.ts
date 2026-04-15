@@ -1,11 +1,10 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
+import { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import OpenAI from "openai";
 import { FunctionTool } from "openai/resources/beta.js";
-import { Tool } from "openai/resources/responses/responses.js";
 import readline from "readline/promises";
-import { json } from "stream/consumers";
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 if (!OPENAI_API_KEY) {
@@ -17,7 +16,7 @@ class MCPClient {
   private openai: OpenAI;
   private transport:
     | StdioClientTransport
-    | StreamableHTTPClientTransport
+    | SSEClientTransport
     | null = null;
   private tools: FunctionTool[] = [];
 
@@ -29,8 +28,8 @@ class MCPClient {
   }
   // methods will go here
 
-  async connectToServer(serverScriptPath: string) {
-    try {
+  async connectToServer(serverScriptPath: string, serverType: "local" | "remote") {
+    if(serverType === "local") {
       const isJs = serverScriptPath.endsWith(".js");
       const isPy = serverScriptPath.endsWith(".py");
       if (!isJs && !isPy) {
@@ -47,7 +46,16 @@ class MCPClient {
         command,
         args: [serverScriptPath],
       });
-      await this.mcp.connect(this.transport); // connects to mcp server
+    }
+
+    else if(serverType === "remote" ) {
+      // Streamable http transport
+      const url = new URL(serverScriptPath);
+      this.transport = new SSEClientTransport(url);
+    }
+
+    try {
+      await this.mcp.connect(this.transport as Transport); // connects to mcp server
 
       const toolsResult = await this.mcp.listTools(); // gets tools list from mcp server
       // console.error("Tools Result", toolsResult);
@@ -173,7 +181,7 @@ async function main() {
   }
   const mcpClient = new MCPClient();
   try {
-    await mcpClient.connectToServer(process.argv[2]);
+    await mcpClient.connectToServer(process.argv[2], process.argv[3] as "local" | "remote");
     await mcpClient.chatLoop();
   } catch (e) {
     console.error("Error:", e);
